@@ -45,7 +45,7 @@ def turn_cover_fun_off():
 while True:
     is_open = cache.get('Cover_state')
     try:
-        cover = get_cover(2)
+        cover = get_cover(20)
         current = int(cover)
         if current > 50:
             cover_open = True

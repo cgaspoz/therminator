@@ -9,6 +9,7 @@ cache = base.Client(('127.0.0.1', 11211))
 
 temperatures = ['Jacuzzi_temperature', 'Pump_temperature', 'Swim_temperature', 'Boiler_temperature', 'Freeze_temperature']
 relays = ['Jacuzzi_relay', 'Pump_relay', 'Swim_relay', 'Boiler_relay', 'Freeze_relay']
+covers = ['Cover_state', 'Cover_current']
 
 # influx configuration - edit these
 ifuser = "grafana"
@@ -23,6 +24,7 @@ while True:
 
     temperatures_keys = cache.get_many(temperatures)
     relays_keys = cache.get_many(relays)
+    cover_keys = cache.get_many(covers)
 
     temperature_fields = {}
     for key in temperatures_keys:
@@ -34,6 +36,11 @@ while True:
             relay_fields[key.split('_')[0]] = True
         else:
             relay_fields[key.split('_')[0]] = False
+    
+    if cover_keys['Cover_state'].decode() == 'True':
+        cover_keys['Cover_state'] = True
+    else:
+        cover_keys['Cover_state'] = False
 
     body = [
         {
@@ -45,7 +52,13 @@ while True:
             "measurement": 'relays',
             "time": current_time,
             "fields": relay_fields
-        }
+        },
+        {
+            "measurement": 'cover',
+            "time": current_time,
+            "fields": {'state': cover_keys['Cover_state'], 'current': int(cover_keys['Cover_current'])}
+        },
+        
     ]
 
     # connect to influx
