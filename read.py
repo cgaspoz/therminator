@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
+import time
 from gpiozero import Button
+from pymemcache.client import base
 from signal import pause
 
 water = Button(4, pull_up=False)
@@ -13,8 +15,94 @@ swim = Button(22)
 stop = Button(26)
 start = Button(27)
 
+debug = True
+
+temperature_keys = ['Swim_temperature', 'Freeze_temperature']
+
+cache = base.Client(('127.0.0.1', 11211))
+
+current_milli_time = lambda: int(round(time.time() * 1000))
+
+countable = cache.get('water')
+
+#initialisation on boot
+if type(countable) != type(dict()):
+    countable = {}
+
+past_time = current_milli_time()-1
+
+l = 0
+
+f = open("/home/cgaspoz/therminator/meter/totJin", 'r')
+totJin = int(f.readline())
+countable['totJin'] = totJin
+f.close()
+
+f = open("/home/cgaspoz/therminator/meter/totJout", 'r')
+totJout = int(f.readline())
+countable['totJout'] = totJout
+f.close()
+
+f = open("/home/cgaspoz/therminator/meter/totLitres", 'r')
+totLitres = int(f.readline())
+countable['totLitres'] = totLitres
+f.close()
+
+print("Read", totJin, totJout, totLitres)
+cache.set('water', countable)
+
 def water_tick():
+    global past_time
+    global l
+    global countable
     print("Water tick")
+    current_time = current_milli_time()
+    temperatures = cache.get_many(temperature_keys)
+    if temperatures:
+        jtemp = float(temperatures['Swim_temperature'])
+        rtemp = float(temperatures['Freeze_temperature'])
+        dtemp = rtemp - jtemp
+    else:
+        jtemp = None
+        rtemp = None
+        dtemp = None
+
+    tick_duration = current_time - past_time
+    
+    if debug:
+        print("Rising edge, duration=", tick_duration, "temp aller=", jtemp, "temp retour=", rtemp, "dif=", dtemp)
+    if l > 0 and tick_duration > 0:
+        lth = 36000000/tick_duration
+        ltm =   600000/tick_duration 
+
+        joules = int(dtemp * 4190 )
+        power = int(dtemp * lth * 4.19 / 3.6)
+
+        if joules > 0 :
+            countable['totJin'] += joules
+            if l % 100 == 0: # preserve la flash ;)
+                f = open("/home/cgaspoz/therminator/meter/totJin", 'w')
+                f.write(str(countable['totJin']) + "\n")
+                f.close()
+        else:
+            countable['totJout'] -= joules
+            if l % 100 == 0: # preserve la flash ;)
+                f = open("/home/cgaspoz/therminator/meter/totJout", 'w')
+                f.write(str(countable['totJout']) + "\n")
+                f.close()
+
+        if debug:
+            print("lth=", lth, "ltm=", ltm, "power=", power, "joules=", joules, "inJ=", countable['totJin'], "outJ=", countable['totJout'], "totLitres=", countable['totLitres'])
+
+    countable['totLitres'] += 10
+    if l % 100 == 0: # preserve la flash ;)
+        f = open("/home/cgaspoz/therminator/meter/totLitres", 'w')
+        f.write(str(countable['totLitres']) + "\n")
+        f.close()
+
+    cache.set('water', countable)
+    past_time = current_time
+    l += 10
 
 def pump_on():
     print("Pump ON")

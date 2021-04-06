@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import ast
 import datetime
 import time
 from influxdb import InfluxDBClient
@@ -25,6 +26,7 @@ while True:
     temperatures_keys = cache.get_many(temperatures)
     relays_keys = cache.get_many(relays)
     cover_keys = cache.get_many(covers)
+    water = ast.literal_eval(cache.get('water').decode())
 
     temperature_fields = {}
     for key in temperatures_keys:
@@ -57,6 +59,11 @@ while True:
             "measurement": 'cover',
             "time": current_time,
             "fields": {'state': cover_keys['Cover_state'], 'current': int(cover_keys['Cover_current'])}
+        },
+        {
+            "measurement": 'water',
+            "time": current_time,
+            "fields": {'joules_in': int(water['totJin']), 'joules_out': int(water['totJout']), 'liters': int(water['totLitres'])}
         },
         
     ]
