@@ -4,20 +4,23 @@ import minimalmodbus
 import pika
 import time
 from pymemcache.client import base
+from pymemcache import serde
+from requests import post
 
 EXCHANGE = 'therminator'
-
-cache = base.Client(('127.0.0.1', 11211))
-
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
-
-channel.exchange_declare(exchange=EXCHANGE, exchange_type='topic')
-
 PORT = '/dev/ttyUSB0'
+BEARER = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiI2ZjlkNDJjMTliY2E0NGQzYWUxMzA1NWI1OGFiNDVmMyIsImlhdCI6MTYxNzcyMzYwNywiZXhwIjoxOTMzMDgzNjA3fQ.8IwU0hP0I-MQd6Z2s_gdjNzwP4wik-LHBG89MSfFSkw'
 
-cache = base.Client(('127.0.0.1', 11211))
+cache = base.Client(('127.0.0.1', 11211), serde=serde.pickle_serde)
+
+
+headers = {
+    "Authorization": "Bearer {}".format(BEARER),
+    "content-type": "application/json",
+}
+url_on = "http://192.168.5.18/api/services/script/jacuzzi_on"
+url_off = "http://192.168.5.18/api/services/script/jacuzzi_off"
+
 
 is_open = False
 
@@ -36,14 +39,26 @@ def get_cover(slave_address):
     return data
 
 def turn_cover_fun_on():
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+    channel = connection.channel()
+    channel.exchange_declare(exchange=EXCHANGE, exchange_type='topic')
     channel.basic_publish(exchange=EXCHANGE, routing_key='jacuzzi.relays.fun', body='ON')
+    channel.close()
+    response = post(url_on, headers=headers)
+    print(response.text)
 
 def turn_cover_fun_off():
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+    channel = connection.channel()
+    channel.exchange_declare(exchange=EXCHANGE, exchange_type='topic')
     channel.basic_publish(exchange=EXCHANGE, routing_key='jacuzzi.relays.fun', body='OFF')
+    channel.close()
+    response = post(url_off, headers=headers)
+    print(response.text)
 
+is_open = cache.get('Cover_state')
 
 while True:
-    is_open = cache.get('Cover_state')
     try:
         cover = get_cover(20)
         current = int(cover)
@@ -59,7 +74,8 @@ while True:
             elif not cover_open:
                 # set cover fun OFF
                 turn_cover_fun_off()
-
+                
+        is_open = cover_open
         cache.set('Cover_state', cover_open)
         cache.set('Cover_current', current)
         print("Cover open:", cover_open, current)

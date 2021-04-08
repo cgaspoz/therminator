@@ -3,6 +3,7 @@
 import time
 from gpiozero import Button
 from pymemcache.client import base
+from pymemcache import serde
 from signal import pause
 
 water = Button(4, pull_up=False)
@@ -19,9 +20,13 @@ debug = True
 
 temperature_keys = ['Swim_temperature', 'Freeze_temperature']
 
-cache = base.Client(('127.0.0.1', 11211))
+cache = base.Client(('127.0.0.1', 11211), serde=serde.pickle_serde)
 
 current_milli_time = lambda: int(round(time.time() * 1000))
+
+past_time = current_milli_time()-1
+
+l = 0
 
 countable = cache.get('water')
 
@@ -29,27 +34,30 @@ countable = cache.get('water')
 if type(countable) != type(dict()):
     countable = {}
 
-past_time = current_milli_time()-1
+    f = open("/home/cgaspoz/therminator/meter/totJin", 'r')
+    totJin = int(f.readline())
+    countable['totJin'] = totJin
+    f.close()
 
-l = 0
+    f = open("/home/cgaspoz/therminator/meter/totJout", 'r')
+    totJout = int(f.readline())
+    countable['totJout'] = totJout
+    f.close()
 
-f = open("/home/cgaspoz/therminator/meter/totJin", 'r')
-totJin = int(f.readline())
-countable['totJin'] = totJin
-f.close()
+    f = open("/home/cgaspoz/therminator/meter/totLitres", 'r')
+    totLitres = int(f.readline())
+    countable['totLitres'] = totLitres
+    f.close()
 
-f = open("/home/cgaspoz/therminator/meter/totJout", 'r')
-totJout = int(f.readline())
-countable['totJout'] = totJout
-f.close()
+    print("Read", totJin, totJout, totLitres)
+    cache.set('water', countable)
 
-f = open("/home/cgaspoz/therminator/meter/totLitres", 'r')
-totLitres = int(f.readline())
-countable['totLitres'] = totLitres
-f.close()
+io_states = cache.get('io_states')
 
-print("Read", totJin, totJout, totLitres)
-cache.set('water', countable)
+#initialisation on boot
+if type(io_states) != type(dict()):
+    io_states = {}
+
 
 def water_tick():
     global past_time

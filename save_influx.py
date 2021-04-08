@@ -5,8 +5,9 @@ import datetime
 import time
 from influxdb import InfluxDBClient
 from pymemcache.client import base
+from pymemcache import serde
 
-cache = base.Client(('127.0.0.1', 11211))
+cache = base.Client(('127.0.0.1', 11211), serde=serde.pickle_serde)
 
 temperatures = ['Jacuzzi_temperature', 'Pump_temperature', 'Swim_temperature', 'Boiler_temperature', 'Freeze_temperature']
 relays = ['Jacuzzi_relay', 'Pump_relay', 'Swim_relay', 'Boiler_relay', 'Freeze_relay']
@@ -26,23 +27,15 @@ while True:
     temperatures_keys = cache.get_many(temperatures)
     relays_keys = cache.get_many(relays)
     cover_keys = cache.get_many(covers)
-    water = ast.literal_eval(cache.get('water').decode())
+    water = cache.get('water')
 
     temperature_fields = {}
     for key in temperatures_keys:
-        temperature_fields[key.split('_')[0]] = float(temperatures_keys[key])
+        temperature_fields[key.split('_')[0]] = temperatures_keys[key]
 
     relay_fields = {}
     for key in relays_keys:
-        if int(relays_keys[key]) == 1:
-            relay_fields[key.split('_')[0]] = True
-        else:
-            relay_fields[key.split('_')[0]] = False
-    
-    if cover_keys['Cover_state'].decode() == 'True':
-        cover_keys['Cover_state'] = True
-    else:
-        cover_keys['Cover_state'] = False
+        relay_fields[key.split('_')[0]] = relays_keys[key]
 
     body = [
         {
@@ -58,12 +51,12 @@ while True:
         {
             "measurement": 'cover',
             "time": current_time,
-            "fields": {'state': cover_keys['Cover_state'], 'current': int(cover_keys['Cover_current'])}
+            "fields": {'state': cover_keys['Cover_state'], 'current': cover_keys['Cover_current']}
         },
         {
             "measurement": 'water',
             "time": current_time,
-            "fields": {'joules_in': int(water['totJin']), 'joules_out': int(water['totJout']), 'liters': int(water['totLitres'])}
+            "fields": {'joules_in': water['totJin'], 'joules_out': water['totJout'], 'liters': water['totLitres']}
         },
         
     ]

@@ -1,16 +1,18 @@
 #!/usr/bin/python3
 
+import json
 import minimalmodbus
 import pika
 import struct
 import time
 from pymemcache.client import base
+from pymemcache import serde
 
 PORT = '/dev/ttyUSB0'
 EXCHANGE = 'therminator'
 QUEUE = 'modbus_relays'
 
-cache = base.Client(('127.0.0.1', 11211))
+cache = base.Client(('127.0.0.1', 11211), serde=serde.pickle_serde)
 
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='localhost'))
@@ -35,8 +37,16 @@ def momentary(relay, slave_address=2):
     return data
 
 def read_all(slave_address=2):
-    device = get_device(slave_address)
-    data = device.read_string(1, 8).encode()
+    retry = True
+    print("Reading all relays state...")
+    while retry:
+        try:
+            device = get_device(slave_address)
+            data = device.read_string(1, 8).encode()
+            retry = False
+        except IOError:
+            print("Failed to read modbus")
+            time.sleep(1)
     return list(struct.unpack('16B', data))[1::2]
 
 def close_all(slave_address=2):
@@ -64,6 +74,14 @@ def send_momentary(relay):
         except IOError:
             print("Failed to write modbus")
             time.sleep(1)
+
+def set_status(status):
+    if status == 0:
+        return False
+    elif status == 1:
+        return True
+    else:
+        return status
 
 def callback(ch, method, properties, body):
     print(ch, method, properties, body)
@@ -100,6 +118,11 @@ def callback(ch, method, properties, body):
         elif command == 'OFF':
             relay = 8
             print("Stopping fun")
+    elif action == 'status':
+        status = read_all()
+        body = {'heat_ON': set_status(status[0]), 'heat_OFF': set_status(status[3]), 'swim_ON': set_status(status[1]), 'swim_OFF': set_status(status[2]), 'pump_ON': set_status(status[4]), 'pump_OFF': set_status(status[5]), 'fun_ON': set_status(status[6]), 'fun_OFF': set_status(status[7])}
+        channel.basic_publish(exchange=EXCHANGE, routing_key='jacuzzi.state.relays', body=json.dumps(body))
+        print("All relays states: {}".format(body))
 
     if relay:
         send_momentary(relay)
